@@ -1,6 +1,6 @@
 import functools
 import pickle
-from typing import Dict, Callable, Optional, TypeVar, Generic, Iterator
+from typing import Any, Dict, Callable, Optional, TypeVar, Generic, Iterator, Type, Union
 
 from torch.utils.data.datapipes._typing import _DataPipeMeta, _IterDataPipeMeta
 from torch.utils.data.datapipes._hook_iterator import _SnapshotState
@@ -37,6 +37,25 @@ UNTRACABLE_DATAFRAME_PIPES = ['batch',  # As it returns DataChunks
                               '_dataframes_as_tuples',  # As it unpacks DF
                               'trace_as_dataframe',  # As it used to mark DF for tracing
                               ]
+
+
+def _functional_dp_wrapper(wrapper, wrapped, name=None):
+    """
+    Copy metadata onto the functional form of the datapipe.
+
+    This assigns the correct module and function name and enables retrieving the
+    documentation with `help(dp.<functional_form>)`.
+
+    Example:
+        >>> # xdoctest: +SKIP
+        >>> import torchdata
+        >>> dp = torchdata.datapipes.iter.IterableWrapper(iterable=["abc", "def"])
+        >>> help(dp.batch)
+    """
+    wrapper.__module__ = wrapped.__module__
+    wrapper.__name__ = name or wrapped.__name__
+    wrapper.__qualname__ = wrapped.__qualname__
+    wrapper.__doc__ = wrapped.__doc__
 
 
 class IterDataPipe(IterableDataset[T_co], metaclass=_IterDataPipeMeta):
@@ -122,6 +141,7 @@ class IterDataPipe(IterableDataset[T_co], metaclass=_IterDataPipeMeta):
                 kwargs = _iter_deprecated_functional_names[attribute_name]
                 _deprecation_warning(**kwargs)
             function = functools.partial(IterDataPipe.functions[attribute_name], self)
+            _functional_dp_wrapper(function, IterDataPipe.functions[attribute_name])
             return function
         else:
             raise AttributeError("'{0}' object has no attribute '{1}".format(self.__class__.__name__, attribute_name))
@@ -145,6 +165,7 @@ class IterDataPipe(IterableDataset[T_co], metaclass=_IterDataPipeMeta):
             return result_pipe
 
         function = functools.partial(class_function, cls_to_register, enable_df_api_tracing)
+        _functional_dp_wrapper(function, cls_to_register, function_name)
         cls.functions[function_name] = function
 
     def __getstate__(self):
@@ -254,6 +275,7 @@ class MapDataPipe(Dataset[T_co], metaclass=_DataPipeMeta):
                 kwargs = _map_deprecated_functional_names[attribute_name]
                 _deprecation_warning(**kwargs)
             function = functools.partial(MapDataPipe.functions[attribute_name], self)
+            _functional_dp_wrapper(function, MapDataPipe.functions[attribute_name])
             return function
         else:
             raise AttributeError("'{0}' object has no attribute '{1}".format(self.__class__.__name__, attribute_name))
@@ -272,6 +294,7 @@ class MapDataPipe(Dataset[T_co], metaclass=_DataPipeMeta):
             return result_pipe
 
         function = functools.partial(class_function, cls_to_register)
+        _functional_dp_wrapper(function, class_function, function_name)
         cls.functions[function_name] = function
 
     def __getstate__(self):
